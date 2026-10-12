@@ -1,0 +1,8 @@
+﻿fastapi
+uvicorn[standard]
+psycopg[binary]
+pymongo
+pydantic-settings
+pytest
+httpx
+ruff
