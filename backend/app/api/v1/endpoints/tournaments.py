@@ -174,8 +174,6 @@ def update_tournament(
                 """,
                 values,
             ).fetchone()
-    except HTTPException:
-        raise
     except psycopg.Error as exc:
         raise _database_error(exc) from exc
     return row

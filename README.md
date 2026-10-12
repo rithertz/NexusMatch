@@ -5,9 +5,9 @@ Database Systems course project.
 
 ## Project status
 
-**Phase:** Environment and repository setup.
+**Phase:** Player and Team Management (Milestone 4) implemented and verified.
 
-## Planned technology stack
+## Stack and verified components
 
 - Frontend: React and TypeScript
 - API: Python and FastAPI
@@ -16,8 +16,12 @@ Database Systems course project.
 - Local services: Docker Desktop and Docker Compose
 - Quality: automated tests and GitHub Actions CI
 
-These are planned components. Implementation and version choices will be
-recorded as they are verified.
+The project currently includes:
+
+- FastAPI services for tournaments, registrations, players, and teams.
+- PostgreSQL-backed relational integrity for player profiles, teams, team membership, tournaments, and registrations.
+- Docker Compose services for PostgreSQL and MongoDB.
+- Automated backend tests covering health, migration runner, tournament, registration, player, and team flows.
 
 ## Learning approach
 
@@ -26,7 +30,10 @@ document it, and push small, meaningful commits to GitHub.
 
 ## Getting started
 
-The setup guide will be added in `docs/devops/ENVIRONMENT_SETUP.md`.
+1. Create or update a local `.env` file from the sample environment values used by the backend.
+2. Start the required services with `docker compose up -d postgres mongodb`.
+3. Apply the current schema with `python backend/scripts/migrate.py`.
+4. Run the backend checks with `python -m pytest backend/tests -q`.
 
 ## Documentation
 

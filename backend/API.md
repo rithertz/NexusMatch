@@ -16,7 +16,80 @@ Interactive documentation is available at `/docs` while the API server is runnin
 
 ## Endpoints
 
-### 1. Create a registration
+### 0. Player endpoints
+
+`POST /api/v1/players`
+
+Create a player profile:
+
+```json
+{
+  "username": "siren",
+  "display_name": "Siren Nova",
+  "email": "siren@example.com"
+}
+```
+
+`GET /api/v1/players?limit=20&offset=0`
+
+List players with basic pagination and optional filters for `username`, `display_name`, and `email`.
+
+`GET /api/v1/players/{player_id}`
+
+Fetch a specific player profile. Returns `404` when the player is not found.
+
+`PATCH /api/v1/players/{player_id}`
+
+Update profile fields such as `display_name`, `username`, or `email`.
+
+### 1. Team endpoints
+
+`POST /api/v1/teams`
+
+Create a team:
+
+```json
+{
+  "team_name": "Storm Breakers"
+}
+```
+
+`GET /api/v1/teams?limit=20&offset=0`
+
+List teams with pagination and an optional `team_name` filter.
+
+`GET /api/v1/teams/{team_id}`
+
+Fetch a team by ID. Returns `404` when the team is absent.
+
+`PATCH /api/v1/teams/{team_id}`
+
+Update a team name.
+
+`GET /api/v1/teams/{team_id}/members`
+
+List the members currently assigned to the team.
+
+`POST /api/v1/teams/{team_id}/members`
+
+Add a player to a team:
+
+```json
+{
+  "player_id": 42
+}
+```
+
+Responses:
+- `201 Created` when membership is inserted.
+- `404 Not Found` when the team or player does not exist.
+- `409 Conflict` when the player is already on the team.
+
+`DELETE /api/v1/teams/{team_id}/members/{player_id}`
+
+Remove a player from a team. Returns `404` if that player is not a current member.
+
+### 2. Create a registration
 
 `POST /api/v1/registrations`
 

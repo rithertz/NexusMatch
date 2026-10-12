@@ -1,15 +1,18 @@
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-
+from app.api.v1.endpoints.players import router as players_router
 from app.api.v1.endpoints.registrations import router as registrations_router
+from app.api.v1.endpoints.teams import router as teams_router
 from app.api.v1.endpoints.tournaments import router as tournaments_router
 from app.db.health import check_mongodb, check_postgres
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 app = FastAPI(
     title="NexusMatch API",
     description="Transactional esports tournament management API.",
     version="0.2.0",
 )
+app.include_router(players_router)
+app.include_router(teams_router)
 app.include_router(registrations_router)
 app.include_router(tournaments_router)
 
