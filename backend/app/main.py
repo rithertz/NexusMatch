@@ -1,6 +1,7 @@
 ﻿from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from app.api.v1.endpoints.registrations import router as registrations_router
 from app.db.health import check_mongodb, check_postgres
 
 app = FastAPI(
@@ -8,7 +9,7 @@ app = FastAPI(
     description="Transactional esports tournament management API.",
     version="0.1.0",
 )
-
+app.include_router(registrations_router)
 
 @app.get("/", tags=["Root"])
 def root() -> dict[str, str]:
