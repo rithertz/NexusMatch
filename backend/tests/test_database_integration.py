@@ -212,3 +212,98 @@ def test_capacity_cannot_be_lowered_below_active_registrations(db, suffix):
             """,
             (tournament_id,),
         )
+
+def test_withdrawal_frees_registration_slot(db, suffix):
+    tournament_id = create_tournament(db, suffix, capacity=2)
+    player_ids = [
+        create_player(db, suffix, label=f"withdraw{index}")
+        for index in range(3)
+    ]
+
+    first_registration = create_registration(
+        db, tournament_id, player_id=player_ids[0]
+    )
+    create_registration(db, tournament_id, player_id=player_ids[1])
+
+    db.execute(
+        """
+        UPDATE registrations
+        SET status = 'withdrawn'
+        WHERE registration_id = %s
+        """,
+        (first_registration,),
+    )
+
+    # Withdrawal frees a slot for the third player.
+    new_registration = create_registration(
+        db, tournament_id, player_id=player_ids[2]
+    )
+    assert new_registration is not None
+
+
+def test_reactivation_cannot_overfill_tournament(db, suffix):
+    tournament_id = create_tournament(db, suffix, capacity=2)
+    player_ids = [
+        create_player(db, suffix, label=f"reactivate{index}")
+        for index in range(3)
+    ]
+
+    first_registration = create_registration(
+        db, tournament_id, player_id=player_ids[0]
+    )
+    create_registration(db, tournament_id, player_id=player_ids[1])
+
+    db.execute(
+        """
+        UPDATE registrations
+        SET status = 'withdrawn'
+        WHERE registration_id = %s
+        """,
+        (first_registration,),
+    )
+
+    create_registration(db, tournament_id, player_id=player_ids[2])
+
+    # Reactivating the withdrawn registration must be rejected.
+    with pytest.raises(psycopg.Error, match="is full"):
+        db.execute(
+            """
+            UPDATE registrations
+            SET status = 'approved'
+            WHERE registration_id = %s
+            """,
+            (first_registration,),
+        )
+
+
+def test_registration_cannot_move_into_full_tournament(db, suffix):
+    source_tournament = create_tournament(
+        db, suffix, capacity=2
+    )
+    target_tournament = create_tournament(
+        db, f"{suffix}_target", capacity=2
+    )
+
+    moving_player = create_player(db, suffix, label="moving")
+    target_players = [
+        create_player(db, suffix, label=f"target{index}")
+        for index in range(2)
+    ]
+
+    moving_registration = create_registration(
+        db, source_tournament, player_id=moving_player
+    )
+
+    for player_id in target_players:
+        create_registration(db, target_tournament, player_id=player_id)
+
+    # The destination tournament is full, so the move must fail.
+    with pytest.raises(psycopg.Error, match="is full"):
+        db.execute(
+            """
+            UPDATE registrations
+            SET tournament_id = %s
+            WHERE registration_id = %s
+            """,
+            (target_tournament, moving_registration),
+        )
