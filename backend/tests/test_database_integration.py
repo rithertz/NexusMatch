@@ -3,6 +3,8 @@
 
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import psycopg
 import pytest
@@ -307,3 +309,84 @@ def test_registration_cannot_move_into_full_tournament(db, suffix):
             """,
             (target_tournament, moving_registration),
         )
+
+
+def test_concurrent_registrations_cannot_overfill_tournament(suffix):
+    """Two transactions compete for one remaining slot."""
+    dsn = os.getenv("NEXUSMATCH_TEST_DATABASE_URL")
+    if not dsn:
+        pytest.skip("Set NEXUSMATCH_TEST_DATABASE_URL to run database tests")
+
+    tournament_id = None
+    player_ids = []
+
+    # These records must be committed so independent connections can see them.
+    with psycopg.connect(dsn) as setup_db:
+        tournament_id = create_tournament(
+            setup_db, suffix, capacity=2
+        )
+        player_ids = [
+            create_player(setup_db, suffix, label=f"concurrent{index}")
+            for index in range(3)
+        ]
+
+        # Occupy one of the two available slots.
+        create_registration(
+            setup_db, tournament_id, player_id=player_ids[0]
+        )
+
+    barrier = Barrier(2)
+
+    def attempt_registration(player_id):
+        try:
+            with psycopg.connect(dsn) as connection, connection.transaction():
+                    # Start both registration attempts together.
+                    barrier.wait(timeout=10)
+                    create_registration(
+                        connection,
+                        tournament_id,
+                        player_id=player_id,
+                    )
+            return "success"
+        except psycopg.errors.RaiseException as exc:
+            if "is full" in str(exc):
+                return "full"
+            raise
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(attempt_registration, player_id)
+                for player_id in player_ids[1:]
+            ]
+            results = [future.result(timeout=20) for future in futures]
+
+        assert results.count("success") == 1
+        assert results.count("full") == 1
+
+        with psycopg.connect(dsn) as verify_db:
+            active_count = verify_db.execute(
+                """
+                SELECT COUNT(*)
+                FROM registrations
+                WHERE tournament_id = %s
+                  AND status IN ('pending', 'approved')
+                """,
+                (tournament_id,),
+            ).fetchone()[0]
+
+        assert active_count == 2
+
+    finally:
+        # Clean up committed test records even when an assertion fails.
+        with psycopg.connect(dsn) as cleanup_db:
+            if tournament_id is not None:
+                cleanup_db.execute(
+                    "DELETE FROM tournaments WHERE tournament_id = %s",
+                    (tournament_id,),
+                )
+            if player_ids:
+                cleanup_db.execute(
+                    "DELETE FROM players WHERE player_id = ANY(%s)",
+                    (player_ids,),
+                )
