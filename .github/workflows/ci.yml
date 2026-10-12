@@ -69,6 +69,13 @@ jobs:
             -d nexusmatch_ci_test \
             -v ON_ERROR_STOP=1 \
             -f database/sql/schema/002_registration_capacity.sql
+      
+      - name: Apply capacity update migration
+        run: |
+          psql -h localhost -p 5432 -U nexusmatch \
+            -d nexusmatch_ci_test \
+            -v ON_ERROR_STOP=1 \
+            -f database/sql/schema/003_tournament_capacity_updates.sql
 
       - name: Run all backend and database tests
         run: python -m pytest backend/tests -v
