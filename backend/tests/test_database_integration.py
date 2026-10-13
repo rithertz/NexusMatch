@@ -148,8 +148,8 @@ def test_cross_tournament_match_participant_is_rejected(db, suffix):
         db.execute(
             """
             INSERT INTO match_participants
-                (match_id, tournament_id, registration_id)
-            VALUES (%s, %s, %s)
+                (match_id, tournament_id, registration_id, slot_number)
+            VALUES (%s, %s, %s, 1)
             """,
             (
                 match_id,

@@ -1,3 +1,4 @@
+from app.api.v1.endpoints.brackets import router as brackets_router
 from app.api.v1.endpoints.players import router as players_router
 from app.api.v1.endpoints.registrations import router as registrations_router
 from app.api.v1.endpoints.teams import router as teams_router
@@ -13,6 +14,7 @@ app = FastAPI(
 )
 app.include_router(players_router)
 app.include_router(teams_router)
+app.include_router(brackets_router)
 app.include_router(registrations_router)
 app.include_router(tournaments_router)
 

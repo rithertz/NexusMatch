@@ -1,6 +1,6 @@
 # NexusMatch Database Design
 
-**Status:** Initial relational schema implemented; integrity migrations manually validated in the PostgreSQL test database. Automated database integration tests and concurrency benchmarks remain planned.
+**Status:** Relational schema and single-elimination engine implemented; schema behavior is covered by PostgreSQL-backed integration tests. Performance benchmarks are not claimed.
 
 ## 1. Purpose and scope
 
@@ -30,8 +30,8 @@ Names below use the actual SQL table and column names in the initial schema. The
 | `team_members` | Many-to-many relationship between players and teams | Composite primary key (`team_id`, `player_id`); foreign keys to `teams` and `players`; `joined_at` |
 | `tournaments` | Tournament configuration and lifecycle | `tournament_id` primary key; `name`; `game_name`; `tournament_type`; `format`; `status`; `max_entries`; optional `starts_at`; `created_at` |
 | `registrations` | A player's or team's entry in a tournament | `registration_id` primary key; `tournament_id`; exactly one of `player_id` and `team_id`; `status`; `registered_at`; unique tournament/competitor combinations |
-| `matches` | A fixture within a tournament | `match_id` primary key; `tournament_id`; `round_number`; `match_number`; `status`; optional scheduled/start/completion timestamps; unique (`tournament_id`, `round_number`, `match_number`) |
-| `match_participants` | Connects registered competitors to a match and stores result fields | Composite primary key (`match_id`, `registration_id`); `tournament_id`; optional `score`; optional `placement`; `is_winner`; composite foreign keys enforcing tournament consistency |
+| `matches` | A fixture or bye within a tournament | `match_id` primary key; `tournament_id`; `round_number`; `match_number`; `status`; `is_bye`; optional scheduled/start/completion timestamps; unique (`tournament_id`, `round_number`, `match_number`) |
+| `match_participants` | Connects registered competitors to a match and stores result fields | Composite primary key (`match_id`, `registration_id`); `tournament_id`; `slot_number` (1 or 2); optional nonnegative `score`; optional `placement`; `is_winner`; composite foreign keys enforcing tournament consistency |
 
 ### 3.1 Tournament attributes are separate concepts
 
@@ -89,7 +89,7 @@ The registration trigger also locks the target tournament row and checks capacit
 
 The capacity migration uses `SELECT ... FOR UPDATE` on the relevant tournament row before counting active registrations. Registration transactions for the same tournament therefore serialize around that row lock. If the active count has reached `max_entries`, the trigger raises an exception instead of allowing the registration.
 
-This protection assumes the registration operation is executed as a transaction and that all relevant registration changes pass through the database trigger. It must still be verified with automated concurrent tests. In particular, tests should cover simultaneous inserts, status changes, and attempts to move registrations between tournaments before this behavior is described as production-proven.
+The database trigger serializes capacity checks against the tournament row. A later bracket migration also locks that same row while generating the bracket and prevents registration insertion, update, or direct deletion after match rows exist. Automated tests cover concurrent registration attempts and bracket operations; no broader load benchmark is claimed.
 
 ### 4.4 Match participants must belong to the match's tournament
 
@@ -107,11 +107,13 @@ The schema also constrains values such as:
 
 ## 5. Indexes
 
-The initial schema creates these explicit indexes:
+The schema migrations create these explicit indexes:
 
 - `idx_registrations_tournament_status` on registration tournament/status lookup.
 - `idx_matches_tournament_round` on match tournament/round lookup.
 - `idx_match_participants_registration` on match-participant registration lookup.
+- `uq_match_participants_match_slot` (migration 005) ensures each match slot is populated at most once.
+- `uq_match_participants_single_winner` (migration 005) permits at most one result winner per match.
 
 Primary keys and unique constraints also create supporting indexes in PostgreSQL. Index effectiveness has not yet been established by recorded query plans or benchmarks. Do not claim a measured performance improvement until repeatable measurements, query details, and the relevant execution plans are saved under `database/experiments/query-plans/`.
 
@@ -130,42 +132,39 @@ That structural separation alone is not a formal proof of 3NF or BCNF. A complet
 
 The formal analysis belongs in `docs/database/NORMALIZATION.md`. Avoid claiming that every relation has been formally proven to be in 3NF or BCNF until that analysis is complete.
 
-## 7. Validation completed so far
+## 7. Single-elimination bracket lifecycle
 
-The following manual checks have been run against the separate PostgreSQL database `nexusmatch_test`:
+Bracket generation is supported only for an open `single_elimination` tournament with at least two approved registrations. Registrations are ordered by `registered_at`, then `registration_id`; this is a deterministic registration-based seed order, not a skill ranking.
 
-- A valid individual registration was accepted.
-- A valid team registration was accepted.
-- A mismatched competitor type was rejected by the registration trigger.
-- A registration from one tournament could not be inserted as a participant in another tournament's match; the composite foreign key rejected it.
-- A capacity test with `max_entries = 2` accepted two registrations and rejected the third with a capacity exception.
-- The capacity migration was applied successfully.
+The engine rounds the entrant count up to the next power of two, creates all `P - 1` match rows for bracket size `P`, and inserts first-round pairings. For a non-power-of-two count, the earliest `P - N` registrations receive byes in the first `P / 2` match slots; remaining registrations are paired in registration order. A bye is persisted as a completed match with `is_bye=true`, one participant, no score, and no `is_winner` flag. Its participant is inserted into the correctly derived next-round slot; this is advancement without a fabricated result. Thus each actual two-competitor result still requires submission.
 
-These are manual checks, not yet an automated database integration-test suite. The capacity test was sequential; it did **not** establish that 100 or more simultaneous requests have been tested. The test database contains disposable test data and should not be treated as production data.
+Match numbers map into the next round using `(match_number + 1) // 2`: odd matches feed slot 1 and even matches feed slot 2. Result submission locks the tournament and match, requires a non-tied score for exactly the two persisted registrations, marks the higher score as the winner, and atomically completes the match and populates the next slot. Completing the final also changes tournament status to `completed`. Completed results and bracket registrations cannot be overwritten through supported endpoints. The tournament API also locks the format and status after generation; the final match result is the operation that moves an in-progress tournament to completed.
 
-## 8. Known gaps and planned work
+## 8. Validation completed
 
-- **Automated database tests:** add repeatable tests for schema creation, constraints, triggers, and rollback behavior using a clean test database.
-- **Concurrency tests:** submit simultaneous registration attempts for the last available slots and verify that the final active count never exceeds capacity.
-- **Status-transition tests:** verify that approval, rejection, and withdrawal correctly affect capacity.
+PostgreSQL-backed integration tests cover the schema and API lifecycle, including 2-, 4-, 8-, and non-power-of-two brackets, byes, both competitor types, registration filtering, result advancement, final completion, duplicate and concurrent operations, cross-tournament isolation, and rollback when advancement cannot populate its slot. CI applies all numbered migrations to PostgreSQL before running the suite.
+
+## 9. Known gaps and planned work
+
+- **Concurrency benchmarks:** current concurrency tests assert safety, not high-volume throughput or latency.
+- **Scoring model:** one numeric score per registration is supported; maps/sets, tie-breaks, and corrections require a future schema/API design.
 - **Registration reassignment:** define and test rules for changing a registration's tournament, including concurrency implications.
-- **Tournament lifecycle rules:** define whether registrations are permitted in each tournament status and enforce the rule in the appropriate database/API layer.
+- **Tournament lifecycle rules:** registration creation is gated by the API while the tournament is open and bracket mutations are frozen by PostgreSQL; additional policies for direct database operations can be considered separately.
 - **Roster rules:** define team captain/ownership, minimum/maximum roster sizes, and when roster changes become prohibited. The current `teams` table does not yet have a captain/owner column.
-- **Match-result integrity:** define valid participant counts, winner rules, score/placement consistency, and how match completion updates tournament state.
+- **Team roster snapshots:** a team registration identifies the team, not a frozen copy of its members; roster policy remains undefined.
 - **Normalization documentation:** finish the functional-dependency, candidate-key, and normal-form analysis.
 - **Index experiments:** capture representative `EXPLAIN (ANALYZE, BUFFERS)` output and compare measured plans/costs before making performance claims.
 - **MongoDB telemetry design:** define document shapes, indexes, retention, and the relationship between telemetry references and relational match IDs.
-- **Migration automation:** ensure migrations apply in order to a fresh database in local development and CI, and fail clearly if a migration fails.
 
-## 9. Migration and environment policy
+## 10. Migration and environment policy
 
 - Keep ordered SQL files under `database/sql/schema/`.
 - Treat migrations already applied to a shared database as immutable; add a new migration for subsequent changes.
 - Use a disposable test database for destructive schema and constraint tests.
 - Never commit local `.env` files, credentials, or production data.
-- The current migrations have been manually applied to `nexusmatch_test`. Automated clean-database migration execution is planned and must be implemented before the process is considered fully reproducible.
+- Migration runner checks and CI verify ordered migration application; local integration testing must use a dedicated test database, never a manually maintained database.
 
-## 10. Related documentation
+## 11. Related documentation
 
 - `docs/database/DATA_DICTIONARY.md` — table and column definitions.
 - `docs/database/NORMALIZATION.md` — functional dependencies, candidate keys, and normal-form analysis.
@@ -173,5 +172,6 @@ These are manual checks, not yet an automated database integration-test suite. T
 - `docs/database/TRANSACTIONS_AND_CONCURRENCY.md` — transaction boundaries, locking, and concurrency tests.
 - `database/sql/schema/001_initial_schema.sql` — initial relational schema.
 - `database/sql/schema/002_registration_capacity.sql` — registration capacity and tournament-type integrity migration.
+- `database/sql/schema/005_single_elimination_brackets.sql` — match slots, bye state, and registration freezing after generation.
 - `database/experiments/concurrency/README.md` — planned concurrency experiments.
 - `database/experiments/query-plans/README.md` — planned query-plan experiments.

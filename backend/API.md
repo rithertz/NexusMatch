@@ -1,6 +1,6 @@
-# NexusMatch Registration API
+# NexusMatch API
 
-Base path: `/api/v1/registrations`
+Base path: `/api/v1`
 
 Interactive documentation is available at `/docs` while the API server is running.
 
@@ -16,7 +16,7 @@ Interactive documentation is available at `/docs` while the API server is runnin
 
 ## Endpoints
 
-### 0. Player endpoints
+### Player endpoints
 
 `POST /api/v1/players`
 
@@ -42,7 +42,7 @@ Fetch a specific player profile. Returns `404` when the player is not found.
 
 Update profile fields such as `display_name`, `username`, or `email`.
 
-### 1. Team endpoints
+### Team endpoints
 
 `POST /api/v1/teams`
 
@@ -89,7 +89,102 @@ Responses:
 
 Remove a player from a team. Returns `404` if that player is not a current member.
 
-### 2. Create a registration
+### Single-elimination bracket endpoints
+
+#### Generate a bracket
+
+`POST /api/v1/tournaments/{tournament_id}/bracket`
+
+The tournament must use `single_elimination`, be in `registration_open` status, and have at least two approved registrations. Only approved registrations enter the bracket; pending, rejected, and withdrawn registrations are excluded. Registrations are ordered by `registered_at`, then `registration_id`.
+
+The response is `201 Created` and contains all rounds and persisted matches. A power-of-two bracket with `N` entrants contains `N - 1` matches. Other entrant counts are padded to the next power of two; the earliest registrations receive the required first-round byes. A bye is represented by a completed match with `is_bye: true`, one participant, no score, and no winner result. That competitor is placed into its next-round slot automatically.
+
+Responses:
+- `404 Not Found` — tournament does not exist.
+- `409 Conflict` — tournament is not open, fewer than two registrations are approved, or a bracket already exists.
+- `422 Unprocessable Entity` — the tournament format is not single elimination.
+
+#### Retrieve a bracket
+
+`GET /api/v1/tournaments/{tournament_id}/bracket`
+
+Returns the persisted bracket grouped into rounds. Each match includes its ID, round and match numbers, status, bye flag, timestamps, winner registration ID (if decided), and participants with slot, competitor type/ID, display name, score, and winner flag.
+
+Returns `404 Not Found` if the tournament or generated bracket does not exist.
+
+Example response:
+
+```json
+{
+  "tournament_id": 12,
+  "rounds": [
+    {
+      "round_number": 1,
+      "matches": [
+        {
+          "match_id": 100,
+          "round_number": 1,
+          "match_number": 1,
+          "status": "scheduled",
+          "is_bye": false,
+          "scheduled_at": null,
+          "started_at": null,
+          "completed_at": null,
+          "winner_registration_id": null,
+          "participants": [
+            {
+              "registration_id": 45,
+              "slot_number": 1,
+              "competitor_type": "player",
+              "competitor_id": 45,
+              "display_name": "Siren Nova",
+              "score": null,
+              "is_winner": false
+            },
+            {
+              "registration_id": 46,
+              "slot_number": 2,
+              "competitor_type": "player",
+              "competitor_id": 46,
+              "display_name": "Nova Echo",
+              "score": null,
+              "is_winner": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Submit a match result
+
+`POST /api/v1/tournaments/{tournament_id}/matches/{match_id}/result`
+
+Submit scores for both persisted match participants. The higher score must match the specified winner; ties and negative scores are invalid.
+
+```json
+{
+  "winner_registration_id": 45,
+  "scores": [
+    { "registration_id": 45, "score": 2 },
+    { "registration_id": 46, "score": 1 }
+  ]
+}
+```
+
+The API derives the next-round slot from the persisted round/match position; clients cannot choose the next opponent. Recording the scores, completing the match, advancing the winner, and completing the tournament after the final occur in one transaction. Completed results cannot be overwritten.
+
+Responses:
+- `200 OK` — result recorded and match returned.
+- `404 Not Found` — tournament or match in that tournament does not exist.
+- `409 Conflict` — tournament or match is not playable, match is a bye/already completed, or bracket advancement conflicts with persisted state.
+- `422 Unprocessable Entity` — malformed/tied scores, mismatched score registration IDs, or winner is not a match participant.
+
+After bracket generation, registration changes and changes to the tournament status or format are rejected. Authentication and authorization are not implemented; the API retains the existing trusted development model.
+
+### Create a registration
 
 `POST /api/v1/registrations`
 
@@ -117,7 +212,7 @@ Responses:
 - `409 Conflict` — duplicate registration, closed tournament, or full tournament.
 - `422 Unprocessable Entity` — invalid payload or competitor type mismatch.
 
-### 2. List registrations
+### List registrations
 
 `GET /api/v1/registrations`
 
@@ -140,7 +235,7 @@ Responses:
 - `200 OK` — returns a JSON array, possibly empty.
 - `422 Unprocessable Entity` — invalid query parameter.
 
-### 3. Get a registration
+### Get a registration
 
 `GET /api/v1/registrations/{registration_id}`
 
@@ -154,7 +249,7 @@ Responses:
 - `200 OK` — registration returned.
 - `404 Not Found` — registration does not exist.
 
-### 4. Approve or reject a registration
+### Approve or reject a registration
 
 `PATCH /api/v1/registrations/{registration_id}/status`
 
@@ -182,7 +277,7 @@ Responses:
 - `409 Conflict` — registration is no longer pending.
 - `422 Unprocessable Entity` — invalid status value.
 
-### 5. Withdraw a registration
+### Withdraw a registration
 
 `POST /api/v1/registrations/{registration_id}/withdraw`
 

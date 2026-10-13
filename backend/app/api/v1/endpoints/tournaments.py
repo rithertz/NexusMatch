@@ -163,6 +163,21 @@ def update_tournament(
                     detail="Tournament not found.",
                 )
 
+            lifecycle_change = (
+                ("status" in changes and changes["status"] != current["status"])
+                or ("format" in changes and changes["format"] != current["format"])
+            )
+            if lifecycle_change:
+                bracket_exists = connection.execute(
+                    "SELECT 1 FROM matches WHERE tournament_id = %s LIMIT 1",
+                    (tournament_id,),
+                ).fetchone()
+                if bracket_exists is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Tournament status and format are locked by its generated bracket.",
+                    )
+
             assignments = ", ".join(f"{column} = %s" for column in changes)
             values = list(changes.values()) + [tournament_id]
             row = connection.execute(

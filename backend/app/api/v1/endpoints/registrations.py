@@ -64,6 +64,12 @@ def _insert_error(exc: psycopg.Error) -> HTTPException:
     if isinstance(exc, RaiseException):
         message = str(exc).lower()
 
+        if "bracket is generated" in message:
+            return HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Registrations cannot change after the tournament bracket is generated.",
+            )
+
         if "full" in message:
             return HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

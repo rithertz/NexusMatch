@@ -47,10 +47,48 @@ remain authoritative for capacity and referential integrity.
 
 An empty update returns `422`. Database integrity conflicts return `409`.
 
+## Single-elimination brackets
+
+### Generate
+
+`POST /api/v1/tournaments/{tournament_id}/bracket`
+
+Generation requires an open single-elimination tournament with at least two approved registrations. The engine orders approved entries by `registered_at`, then `registration_id`. For a non-power-of-two field, the earliest registrations receive first-round byes. All rounds and matches are persisted in the existing match tables.
+
+The endpoint returns `201` and the full persisted bracket. It returns `409` for a tournament in the wrong lifecycle state, insufficient approved entrants, or duplicate generation; non-single-elimination formats return `422`.
+
+### Retrieve
+
+`GET /api/v1/tournaments/{tournament_id}/bracket`
+
+Returns rounds and matches with participant slots, competitor labels, scores, winner, status, and bye state. A tournament without a generated bracket returns `404`.
+
+### Record a result
+
+`POST /api/v1/tournaments/{tournament_id}/matches/{match_id}/result`
+
+Example:
+
+```json
+{
+  "winner_registration_id": 45,
+  "scores": [
+    { "registration_id": 45, "score": 2 },
+    { "registration_id": 46, "score": 1 }
+  ]
+}
+```
+
+Scores are nonnegative, distinct, and must reference the two persisted participants; the higher score must identify the winner. Bye and completed matches cannot accept results. In one transaction the API records the result, completes the match, advances the winner to the next derived slot, and marks the tournament completed after the final. Completed results cannot be corrected through this API. The tournament and match locks plus PostgreSQL's unique slot constraint serialize concurrent submissions.
+
+The engine creates a complete power-of-two bracket of `P - 1` matches for `P` slots. Bye matches are completed with `is_bye=true` and one participant, but no fabricated score or winner flag. Registration changes are prevented once match rows exist; tournament format and status can no longer be changed manually after generation.
+
+See [API.md](./API.md) for complete request/response shapes and status-code details.
+
 ## Common status codes
 
 - `201`: tournament created
-- `200`: query or update succeeded
+- `200`: query, update, or match result succeeded
 - `404`: tournament or referenced record not found
 - `409`: database integrity conflict
 - `422`: invalid request payload or query parameters

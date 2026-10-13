@@ -5,7 +5,7 @@ Database Systems course project.
 
 ## Project status
 
-**Phase:** Player and Team Management (Milestone 4) implemented and verified.
+**Phase:** Single-elimination tournament engine (Milestone 5) implemented and tested.
 
 ## Stack and verified components
 
@@ -19,9 +19,10 @@ Database Systems course project.
 The project currently includes:
 
 - FastAPI services for tournaments, registrations, players, and teams.
-- PostgreSQL-backed relational integrity for player profiles, teams, team membership, tournaments, and registrations.
+- Persisted single-elimination brackets, bye advancement, match-result submission, and tournament completion.
+- PostgreSQL-backed relational integrity for players, teams, registrations, match slots, and cross-tournament isolation.
 - Docker Compose services for PostgreSQL and MongoDB.
-- Automated backend tests covering health, migration runner, tournament, registration, player, and team flows.
+- Backend unit and PostgreSQL integration tests covering health, migrations, tournament, registration, player, team, and bracket flows.
 
 ## Learning approach
 
@@ -30,10 +31,13 @@ document it, and push small, meaningful commits to GitHub.
 
 ## Getting started
 
-1. Create or update a local `.env` file from the sample environment values used by the backend.
+1. Create or update a local `.env` file from `.env.example`; keep real credentials out of source control.
 2. Start the required services with `docker compose up -d postgres mongodb`.
 3. Apply the current schema with `python backend/scripts/migrate.py`.
-4. Run the backend checks with `python -m pytest backend/tests -q`.
+4. Set `NEXUSMATCH_TEST_DATABASE_URL` to a separate disposable PostgreSQL test database that has these migrations applied.
+5. Run the backend checks with `python -m pytest backend/tests -q` and `ruff check backend`.
+
+Bracket generation only accepts open single-elimination tournaments with at least two approved registrations. Generated brackets are immutable with respect to registration changes; match completion advances winners transactionally. See [backend/API.md](./backend/API.md), [backend/API_TOURNAMENTS.md](./backend/API_TOURNAMENTS.md), and [docs/database/DATABASE_DESIGN.md](./docs/database/DATABASE_DESIGN.md).
 
 ## Documentation
 

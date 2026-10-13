@@ -20,6 +20,7 @@ def test_migrations_are_discovered_in_numeric_order():
         "002_registration_capacity.sql",
         "003_tournament_capacity_updates.sql",
         "004_registration_status_capacity.sql",
+        "005_single_elimination_brackets.sql",
     ]
 
 
@@ -30,6 +31,7 @@ def test_migrations_are_discovered_in_numeric_order():
         "002_registration_capacity.sql",
         "003_tournament_capacity_updates.sql",
         "004_registration_status_capacity.sql",
+        "005_single_elimination_brackets.sql",
     ],
 )
 def test_migration_body_removes_outer_transaction(filename):
