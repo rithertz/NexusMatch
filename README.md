@@ -4,7 +4,7 @@
 
 NexusMatch models tournament operations: discover tournaments, register players or teams, manage registrations, generate a persisted single-elimination bracket, and submit match results that advance winners. The project emphasizes relational integrity, transaction-safe changes, reproducible migrations, automated testing, and incremental engineering.
 
-> **Status:** The tournament-management MVP and frontend Playwright E2E setup are implemented. GitHub Actions CI is passing. Current Playwright tests mock API responses; they complement, but do not replace, live browser-to-backend integration tests.
+> **Project status:** The tournament-management MVP and frontend Playwright E2E setup are implemented. The project is in the frontend and end-to-end integration phase (Milestone 6). GitHub Actions CI is passing. Current Playwright tests mock API responses; live browser-to-backend integration testing remains future work.
 **Phase:** Frontend and end-to-end integration (Milestone 6) implemented.
 
 ## Contents
