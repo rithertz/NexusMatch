@@ -38,6 +38,7 @@ document it, and push small, meaningful commits to GitHub.
 4. Set `NEXUSMATCH_TEST_DATABASE_URL` to a separate disposable PostgreSQL test database that has these migrations applied.
 5. Run the backend checks with `python -m pytest backend/tests -q` and `ruff check backend`.
 6. In a second terminal, run `cd frontend; npm install; npm run dev`. See [frontend/README.md](./frontend/README.md) for API configuration and frontend checks.
+7. For browser tests, run `cd frontend; npm run e2e:install; npm run e2e`. These browser tests mock API responses; they validate the frontend UI but do not replace database-backed backend integration tests.
 
 Bracket generation only accepts open single-elimination tournaments with at least two approved registrations. Generated brackets are immutable with respect to registration changes; match completion advances winners transactionally. See [backend/API.md](./backend/API.md), [backend/API_TOURNAMENTS.md](./backend/API_TOURNAMENTS.md), and [docs/database/DATABASE_DESIGN.md](./docs/database/DATABASE_DESIGN.md).
 
