@@ -5,12 +5,23 @@ from app.api.v1.endpoints.teams import router as teams_router
 from app.api.v1.endpoints.tournaments import router as tournaments_router
 from app.db.health import check_mongodb, check_postgres
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 app = FastAPI(
     title="NexusMatch API",
     description="Transactional esports tournament management API.",
     version="0.2.0",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 app.include_router(players_router)
 app.include_router(teams_router)

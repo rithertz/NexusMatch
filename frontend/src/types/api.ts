@@ -1,0 +1,9 @@
+export type TournamentStatus = 'draft'|'registration_open'|'in_progress'|'completed'|'cancelled'
+export type Tournament = { tournament_id:number; name:string; game_name:string; tournament_type:'individual'|'team'; format:string; status:TournamentStatus; max_entries:number; starts_at:string|null; created_at:string }
+export type Player = { player_id:number; username:string; display_name:string; email:string|null; created_at:string }
+export type Team = { team_id:number; team_name:string; created_at:string }
+export type Registration = { registration_id:number; tournament_id:number; player_id:number|null; team_id:number|null; status:'pending'|'approved'|'rejected'|'withdrawn'; registered_at:string }
+export type Participant = { registration_id:number; slot_number:number; competitor_type:'player'|'team'; competitor_id:number; display_name:string; score:number|null; is_winner:boolean }
+export type Match = { match_id:number; round_number:number; match_number:number; status:'scheduled'|'in_progress'|'completed'|'cancelled'; is_bye:boolean; winner_registration_id:number|null; participants:Participant[]; scheduled_at:string|null; started_at:string|null; completed_at:string|null }
+export type Bracket = { tournament_id:number; rounds:{round_number:number;matches:Match[]}[] }
+export type Health = { status:'ok'|'degraded'; checks:{postgres:'ok'|'error';mongodb:'ok'|'error'} }
