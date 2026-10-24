@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: nexusmatch_e2e_test
+      POSTGRES_USER: nexusmatch_e2e
+      POSTGRES_PASSWORD: nexusmatch_e2e_test_only
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexusmatch_e2e -d nexusmatch_e2e_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mongodb:
+    image: mongo:8
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: nexusmatch_e2e_admin
+      MONGO_INITDB_ROOT_PASSWORD: nexusmatch_e2e_test_only
+    ports:
+      - "127.0.0.1:27018:27017"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mongosh --quiet --username "$$MONGO_INITDB_ROOT_USERNAME" --password "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand('ping').ok" | grep -q 1
+      interval: 2s
+      timeout: 10s
+      retries: 30

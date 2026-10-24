@@ -58,7 +58,7 @@ def created_tournament(api: TestClient, dsn: str, suffix: str):
             )
 
 
-def test_create_tournament(api: TestClient, suffix: str):
+def test_create_tournament(api: TestClient, dsn: str, suffix: str):
     response = api.post(
         "/api/v1/tournaments",
         json={
@@ -71,9 +71,47 @@ def test_create_tournament(api: TestClient, suffix: str):
     )
     assert response.status_code == 201
     data = response.json()
-    assert data["tournament_type"] == "team"
-    assert data["status"] == "draft"
-    assert data["max_entries"] == 16
+    try:
+        assert data["tournament_type"] == "team"
+        assert data["status"] == "draft"
+        assert data["max_entries"] == 16
+    finally:
+        with psycopg.connect(dsn) as connection:
+            connection.execute(
+                "DELETE FROM tournaments WHERE tournament_id = %s",
+                (data["tournament_id"],),
+            )
+
+
+def test_create_tournament_trims_name_and_persists_canonical_value(
+    api: TestClient, dsn: str
+):
+    response = api.post(
+        "/api/v1/tournaments",
+        json={
+            "name": "  Canonical API Tournament  ",
+            "game_name": "Valorant",
+            "tournament_type": "individual",
+            "format": "single_elimination",
+            "max_entries": 8,
+        },
+    )
+    assert response.status_code == 201
+    tournament = response.json()
+    try:
+        assert tournament["name"] == "Canonical API Tournament"
+        with psycopg.connect(dsn) as connection:
+            stored_name = connection.execute(
+                "SELECT name FROM tournaments WHERE tournament_id = %s",
+                (tournament["tournament_id"],),
+            ).fetchone()[0]
+        assert stored_name == tournament["name"]
+    finally:
+        with psycopg.connect(dsn) as connection:
+            connection.execute(
+                "DELETE FROM tournaments WHERE tournament_id = %s",
+                (tournament["tournament_id"],),
+            )
 
 
 def test_create_tournament_rejects_invalid_payload(api: TestClient):

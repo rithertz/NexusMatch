@@ -37,20 +37,20 @@ jobs:
         run: npm run e2e
 
   test:
-    name: Lint and Test
+    name: Backend Lint and Tests
     runs-on: ubuntu-latest
 
     services:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: nexusmatch_ci_test
-          POSTGRES_USER: nexusmatch
+          POSTGRES_DB: nexusmatch_ci_isolated_test
+          POSTGRES_USER: nexusmatch_ci
           POSTGRES_PASSWORD: ci_test_password
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U nexusmatch -d nexusmatch_ci_test"
+          --health-cmd "pg_isready -U nexusmatch_ci -d nexusmatch_ci_isolated_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -58,10 +58,10 @@ jobs:
     env:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
-      POSTGRES_DB: nexusmatch_ci_test
-      POSTGRES_USER: nexusmatch
+      POSTGRES_DB: nexusmatch_ci_isolated_test
+      POSTGRES_USER: nexusmatch_ci
       POSTGRES_PASSWORD: ci_test_password
-      NEXUSMATCH_TEST_DATABASE_URL: postgresql://nexusmatch:ci_test_password@localhost:5432/nexusmatch_ci_test
+      NEXUSMATCH_TEST_DATABASE_URL: postgresql://nexusmatch_ci:ci_test_password@localhost:5432/nexusmatch_ci_isolated_test
 
     steps:
       - name: Checkout repository
@@ -82,8 +82,105 @@ jobs:
       - name: Check code with Ruff
         run: ruff check backend
 
+      - name: Verify isolated database identity and emptiness
+        run: python backend/scripts/verify_test_database.py --require-empty
+
       - name: Apply database migrations
         run: python backend/scripts/migrate.py
 
       - name: Run test suite
         run: python -m pytest backend/tests -v
+
+  real-browser-integration:
+    name: Real-stack Browser Integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: nexusmatch_e2e_test
+          POSTGRES_USER: nexusmatch_e2e
+          POSTGRES_PASSWORD: nexusmatch_e2e_test_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nexusmatch_e2e -d nexusmatch_e2e_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mongodb:
+        image: mongo:8
+        env:
+          MONGO_INITDB_ROOT_USERNAME: nexusmatch_e2e_admin
+          MONGO_INITDB_ROOT_PASSWORD: nexusmatch_e2e_test_only
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --username nexusmatch_e2e_admin --password nexusmatch_e2e_test_only --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\" | grep -q 1"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: nexusmatch_e2e_test
+      POSTGRES_USER: nexusmatch_e2e
+      POSTGRES_PASSWORD: nexusmatch_e2e_test_only
+      NEXUSMATCH_TEST_DATABASE_URL: postgresql://nexusmatch_e2e:nexusmatch_e2e_test_only@localhost:5432/nexusmatch_e2e_test
+      NEXUSMATCH_REAL_E2E: "1"
+      VITE_API_BASE_URL: http://127.0.0.1:8000/api/v1
+      MONGODB_HOST: localhost
+      MONGODB_PORT: "27017"
+      MONGODB_DATABASE: nexusmatch_e2e_telemetry
+      MONGO_INITDB_ROOT_USERNAME: nexusmatch_e2e_admin
+      MONGO_INITDB_ROOT_PASSWORD: nexusmatch_e2e_test_only
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Verify isolated database identity and emptiness
+        run: python backend/scripts/verify_test_database.py --require-empty
+      - name: Apply migrations to isolated integration database
+        run: python backend/scripts/migrate.py
+      - name: Start backend
+        run: |
+          python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/nexusmatch-api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/nexusmatch-api.pid"
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/api/v1/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/nexusmatch-api.log"
+          exit 1
+      - name: Run real browser-to-backend workflow
+        working-directory: frontend
+        run: npm run e2e:integration
+      - name: Upload Playwright diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-stack-playwright-diagnostics
+          path: frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7

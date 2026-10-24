@@ -18,6 +18,9 @@ Base path: `/api/v1/tournaments`
 ```
 
 Returns `201 Created`. The database default status is `draft`.
+`name` is required, trimmed before persistence, must not be blank, and must contain
+3–150 characters. Names are returned as the canonical display label; tournament IDs
+remain stable route and relationship identifiers.
 
 ## List tournaments
 
@@ -44,6 +47,9 @@ Only supplied fields are changed. Supported fields: `name`, `game_name`, `format
 `max_entries`, `starts_at`, and `status`. `tournament_type` is immutable through this
 endpoint to avoid invalidating existing registrations. PostgreSQL constraints and triggers
 remain authoritative for capacity and referential integrity.
+
+Set `{"status":"registration_open"}` through this endpoint to open registration. The
+organizer UI reflects the returned server state and does not open registration locally.
 
 An empty update returns `422`. Database integrity conflicts return `409`.
 

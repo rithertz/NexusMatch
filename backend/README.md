@@ -36,13 +36,15 @@ The backend exposes the NexusMatch API using FastAPI and PostgreSQL. It is respo
 
 ## Verification
 
-Run the backend suite from the repository root against a dedicated disposable PostgreSQL database. Do not point this variable at a manually maintained or production database:
+Run the backend suite from the repository root against a dedicated disposable PostgreSQL database. The test configuration accepts only local databases named `nexusmatch_ci_isolated_test` or `nexusmatch_e2e_test`; it verifies the actual connected database before tests run and rejects protected names. Do not point this variable at a manually maintained or production database:
 
 ```powershell
-$env:NEXUSMATCH_TEST_DATABASE_URL = "postgresql://<user>:<password>@localhost:5432/<dedicated_test_database>"
+$env:NEXUSMATCH_TEST_DATABASE_URL = "postgresql://nexusmatch_ci:<password>@localhost:5432/nexusmatch_ci_isolated_test"
 python -m pytest backend/tests -q
 ruff check backend
 ```
+
+For a fully configured local run without editing `.env`, install dependencies and run `python backend/scripts/run_real_stack_e2e.py` from the repository root. It provisions an ephemeral, empty test database, applies/checks migrations, runs the full backend suite, then executes the real browser integration test. It refuses if the database identity cannot be verified and never connects to the development database.
 
 ## Related documents
 

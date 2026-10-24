@@ -4,8 +4,8 @@
 
 NexusMatch models tournament operations: discover tournaments, register players or teams, manage registrations, generate a persisted single-elimination bracket, and submit match results that advance winners. The project emphasizes relational integrity, transaction-safe changes, reproducible migrations, automated testing, and incremental engineering.
 
-> **Project status:** The tournament-management MVP and frontend Playwright E2E setup are implemented. The project is in the frontend and end-to-end integration phase (Milestone 6). GitHub Actions CI is passing. Current Playwright tests mock API responses; live browser-to-backend integration testing remains future work.
-**Phase:** Frontend and end-to-end integration (Milestone 6) implemented.
+> **Project status:** The tournament-management MVP includes named tournament creation, the registration lifecycle, persisted single-elimination brackets and match results. CI runs both mocked UI E2E and isolated real-stack browser integration tests.
+**Phase:** Full-stack workflow and isolated integration coverage implemented.
 
 ## Contents
 
@@ -137,6 +137,8 @@ This is a guide to the principal areas; consult the actual repository tree if fi
 
 ### Tournament details and registration
 - Displays tournament format, game, status, start date, and entry limit.
+- Requires a canonical, human-readable tournament name (trimmed and limited to 150 characters).
+- Opens registration through the organizer console's backend status transition.
 - Supports registration with an existing player or team record.
 - Displays registration status and resolves participant names when corresponding player/team records are available.
 - Shows an explicit fallback when a participant name cannot be resolved.
@@ -155,7 +157,8 @@ This is a guide to the principal areas; consult the actual repository tree if fi
 - Typechecking and linting.
 - Production frontend build.
 - Playwright Chromium tests for discovery, tournament detail, participant names, bracket rendering, empty states, loading, and API errors.
-- GitHub Actions runs frontend and backend jobs independently.
+- Separate real-stack Playwright tests verify the browser-to-FastAPI-to-PostgreSQL workflow without API interception.
+- GitHub Actions runs frontend, backend, and real-stack integration checks against isolated services.
 
 ## Data model
 
@@ -342,20 +345,43 @@ Install Chromium once:
 npm run e2e:install
 ```
 
-Run browser tests:
+Run the mocked browser tests:
 
 ```powershell
 npm run e2e
 ```
 
-**Important:** current Playwright tests intercept API requests and return fixtures. They verify frontend rendering and interactions without requiring live FastAPI calls or database writes. They do not prove full browser-to-backend integration.
+The `npm run e2e` suite intercepts API requests and returns fixtures. It verifies frontend rendering and interactions without database writes; it does not prove browser-to-backend integration.
+
+### Real-stack integration
+
+Install backend and frontend dependencies, then install Chromium:
+
+```powershell
+python -m pip install -r backend/requirements.txt
+Set-Location frontend
+npm ci
+npm run e2e:install
+Set-Location ..
+```
+
+Run the real-stack workflow from the repository root:
+
+```powershell
+python backend/scripts/run_real_stack_e2e.py
+```
+
+The runner starts its own PostgreSQL and MongoDB services from `compose.e2e.yaml`, verifies the allowlisted database identity and empty schema before migrations, applies and verifies all migration checksums, runs the backend pytest suite, starts FastAPI, and runs real Chromium scenarios through the frontend. It uses separate ports 5433, 27018, 8001, and 5174 so the normal application ports (5432, 27017, 8000, and 5173) are not disturbed. It sets its own test-only database configuration; it does not read or modify `.env`. It refuses to proceed if its ports are occupied and uses no persistent Docker volumes. Its uniquely named Compose project is stopped afterward without touching other containers or volumes. A pre-existing service or database is never reset.
+
+The integration browser scenario covers canonical name validation and persistence, server-controlled registration opening, registration and approval, duplicate and capacity rejection, bracket generation with a bye, result submission and winner progression, repeated-operation rejection, and persisted state after refresh. Backend PostgreSQL tests additionally cover no-bye bracket shapes, data constraints, triggers, rollback, and transaction behavior.
 
 ### GitHub Actions
 
 Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 
 - **Frontend checks:** dependency installation, typecheck, lint, unit tests, production build, Chromium installation, and Playwright E2E.
-- **Backend checks:** PostgreSQL 17 service, Python dependency installation, Ruff, migrations, and backend tests.
+- **Backend checks:** an allowlisted PostgreSQL 17 test database, Python dependency installation, Ruff, migrations, and backend tests.
+- **Real browser integration:** separate PostgreSQL and MongoDB services, explicit test-only credentials, migrations, a live FastAPI process, and Playwright without API interception.
 
 A green CI run means the configured jobs passed for that commit; it does not prove every possible workflow or deployment configuration.
 
@@ -364,10 +390,11 @@ A green CI run means the configured jobs passed for that commit; it does not pro
 Database safety is mandatory.
 
 - Use a dedicated disposable database for automated tests.
-- Set `NEXUSMATCH_TEST_DATABASE_URL` to the intended test database as expected by the test configuration.
+- Backend tests fail closed unless `NEXUSMATCH_TEST_DATABASE_URL` targets an allowlisted local test database (`nexusmatch_ci_isolated_test` or `nexusmatch_e2e_test`) and the connected database identity matches.
 - Confirm the target database name before running migrations or tests.
 - Never use a manually populated development database as an automated-test target.
 - Do not drop databases, reset schemas, remove Docker volumes, or run destructive cleanup without explicitly reviewing the target and consequences.
+- The real-stack runner uses a fresh, temporary Compose project with no data volumes and refuses to migrate a non-empty database; it never connects to the development database `nexusmatch` or protected test databases.
 - `docker compose down -v` can remove Compose-managed volumes and destroy persistent data; do not use it casually.
 - Keep credentials out of source control and logs.
 
