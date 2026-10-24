@@ -10,6 +10,7 @@
     "test": "vitest run tests/unit",
     "typecheck": "tsc -b",
     "e2e": "playwright test",
+    "e2e:integration": "playwright test --config playwright.integration.config.ts",
     "e2e:install": "playwright install chromium"
   },
   "dependencies": {

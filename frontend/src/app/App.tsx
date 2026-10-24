@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, NavLink, Route, Routes, useParams } from 'react-router-dom'
 import { api, ApiError } from '../lib/api'
-import type { Bracket, Health, Match, Player, Registration, Team, Tournament } from '../types/api'
+import type { Bracket, Health, Match, Player, Registration, Team, Tournament, TournamentStatus } from '../types/api'
 
 const label=(s:string)=>s.replaceAll('_',' ')
 const date=(value:string|null)=>value?new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(value)):'Not scheduled'
@@ -20,13 +20,121 @@ function MatchPanel({t,match,close,refresh}:{t:Tournament;match:Match;close:()=>
 function Participants({tournamentId,tournamentType}:{tournamentId:number;tournamentType:Tournament['tournament_type']}){const data=useLoad(async()=>{const registrationsPromise=api.registrations({tournament_id:tournamentId,limit:100});const namesPromise:Promise<Map<number,string>>=tournamentType==='individual'?api.players({limit:100}).then(players=>new Map<number,string>(players.map(player=>[player.player_id,player.display_name]))):api.teams({limit:100}).then(teams=>new Map<number,string>(teams.map(team=>[team.team_id,team.team_name])));const [registrations,names]=await Promise.all([registrationsPromise,namesPromise]);return {registrations,names}},[tournamentId,tournamentType]);if(data.loading)return <Busy/>;if(data.error)return <Notice kind="error">{data.error}</Notice>;const registrations=data.data?.registrations??[];if(!registrations.length)return <section className="list"><div className="empty"><h2>No registrations yet</h2><p>Approved and pending entries will appear here.</p></div></section>;return <section className="list">{registrations.map(registration=>{const competitorId=registration.player_id??registration.team_id;const displayName=competitorId===null?undefined:data.data?.names.get(competitorId);return <div key={registration.registration_id}><span>Registration #{registration.registration_id}</span><Status value={registration.status}/><span>{displayName??'Competitor name unavailable'}</span></div>})}</section>}
 function TournamentDetail(){const {id=''}=useParams();const tid=Number(id);const tournament=useLoad(()=>api.tournament(tid),[tid]);const bracket=useLoad(()=>api.bracket(tid),[tid]);const regs=useLoad(()=>api.registrations({tournament_id:tid}),[tid]);const [tab,setTab]=useState<'overview'|'bracket'|'participants'>('overview');if(tournament.loading)return <Busy/>;if(tournament.error||!tournament.data)return <Notice kind="error">{tournament.error||'Tournament not found.'}</Notice>;const t=tournament.data;return <><section className="detail-head"><div><Link to="/" className="back">← Discover</Link><p className="eyebrow">{t.game_name} · {t.tournament_type}</p><h1>{t.name}</h1><p>{label(t.format)} · {date(t.starts_at)}</p></div><Status value={t.status}/></section><div className="tabs" role="tablist">{(['overview','bracket','participants'] as const).map(x=><button role="tab" aria-selected={tab===x} onClick={()=>setTab(x)} key={x}>{x}</button>)}</div>{tab==='overview'&&<section className="detail-grid"><article><h2>Competition briefing</h2><dl className="facts"><div><dt>Format</dt><dd>{label(t.format)}</dd></div><div><dt>Entry limit</dt><dd>{t.max_entries}</dd></div><div><dt>Current registrations</dt><dd>{regs.data?.length??'—'}</dd></div><div><dt>Registration</dt><dd>{t.status==='registration_open'?'Open':'Closed'}</dd></div></dl></article>{t.status==='registration_open'?<Register t={t} onDone={()=>void regs.refresh()}/>:<article><h3>Registration unavailable</h3><p>The server allows entries only while this tournament is registration_open.</p></article>}</section>}{tab==='bracket'&&(bracket.loading?<Busy/>:bracket.error?<section className="bracket-section"><Notice>{bracket.error.includes('not been generated')?'No persisted bracket yet.':bracket.error}</Notice></section>:<BracketView t={t} bracket={bracket.data} refresh={()=>void bracket.refresh()}/>)}{tab==='participants'&&<Participants tournamentId={tid} tournamentType={t.tournament_type}/>}</>}
 function Registrations(){
- const data=useLoad(()=>api.registrations({limit:100}),[])
+ const data=useLoad(async()=>{
+  const [registrations,tournaments]=await Promise.all([api.registrations({limit:100}),api.tournaments({limit:100})])
+  return {registrations,tournamentNames:new Map(tournaments.map(tournament=>[tournament.tournament_id,tournament.name]))}
+ },[])
  const withdraw=async(id:number)=>{try{await api.withdraw(id);void data.refresh()}catch(e){alert(message(e))}}
  if(data.loading)return <Busy/>
  if(data.error)return <Notice kind="error">{data.error}</Notice>
- return <><section className="page-title"><p className="eyebrow">Database-backed entries</p><h1>My registrations</h1><p>This API is identity-free, so this screen lists all registrations in the configured environment.</p></section><section className="list">{data.data?.length?data.data.map(r=><div key={r.registration_id}><span><b>#{r.registration_id}</b> · Tournament #{r.tournament_id}</span><Status value={r.status}/><span>{r.player_id?`Player #${r.player_id}`:`Team #${r.team_id}`}</span>{(r.status==='pending'||r.status==='approved')&&<button onClick={()=>void withdraw(r.registration_id)}>Withdraw</button>}</div>):<div className="empty">No registrations are stored.</div>}</section></>
+ return <><section className="page-title"><p className="eyebrow">Database-backed entries</p><h1>My registrations</h1><p>This API is identity-free, so this screen lists all registrations in the configured environment.</p></section><section className="list">{data.data?.registrations.length?data.data.registrations.map(r=><div key={r.registration_id}><span><b>#{r.registration_id}</b> · <Link to={`/tournaments/${r.tournament_id}`}>{data.data?.tournamentNames.get(r.tournament_id)??'Tournament name unavailable'}</Link></span><Status value={r.status}/><span>{r.player_id?`Player #${r.player_id}`:`Team #${r.team_id}`}</span>{(r.status==='pending'||r.status==='approved')&&<button onClick={()=>void withdraw(r.registration_id)}>Withdraw</button>}</div>):<div className="empty">No registrations are stored.</div>}</section></>
 }
 function Teams(){const teams=useLoad(()=>api.teams(),[]);const [selected,setSelected]=useState<Team|null>(null);const members=useLoad(()=>selected?api.teamMembers(selected.team_id):Promise.resolve([]),[selected?.team_id]);return <><section className="page-title"><p className="eyebrow">Roster directory</p><h1>Teams</h1><p>Inspect existing team rosters. Membership edits are available through the backend but are not implied to be authorized without authentication.</p></section>{teams.loading?<Busy/>:teams.error?<Notice kind="error">{teams.error}</Notice>:<section className="team-list">{teams.data?.map(t=><button key={t.team_id} className={selected?.team_id===t.team_id?'selected':''} onClick={()=>setSelected(t)}>{t.team_name}<span>Team #{t.team_id}</span></button>)||<div className="empty">No teams exist yet.</div>}</section>}{selected&&<section className="roster"><h2>{selected.team_name} roster</h2>{members.loading?<Busy/>:members.error?<Notice kind="error">{members.error}</Notice>:members.data?.length?members.data.map(m=><p key={m.player_id}>Player #{m.player_id} <small>joined {date(m.joined_at)}</small></p>):<p>No members recorded.</p>}</section>}</>}
-function Organizer(){const tournaments=useLoad(()=>api.tournaments({limit:100}),[]);const [form,setForm]=useState({name:'',game_name:'',tournament_type:'individual',format:'single_elimination',max_entries:'8',starts_at:''});const [notice,setNotice]=useState('');const create=async(e:FormEvent)=>{e.preventDefault();try{await api.createTournament({...form,max_entries:Number(form.max_entries),starts_at:form.starts_at||null} as never);setNotice('Tournament created. Open it from Discover to manage its lifecycle.');setForm({name:'',game_name:'',tournament_type:'individual',format:'single_elimination',max_entries:'8',starts_at:''});void tournaments.refresh()}catch(e){setNotice(message(e))}};const generate=async(id:number)=>{if(!confirm('Generate the persisted bracket? Only approved registrations will participate.'))return;try{await api.generateBracket(id);setNotice('Bracket generated and tournament moved to in progress.');void tournaments.refresh()}catch(e){setNotice(message(e))}};const approve=async(r:Registration,status:'approved'|'rejected')=>{try{await api.registrationStatus(r.registration_id,status);void tournaments.refresh()}catch(e){setNotice(message(e))}};return <><section className="page-title"><p className="eyebrow">Trusted local demo tools</p><h1>Organizer console</h1><p>The current backend has no authorization layer. These actions are real and are deliberately labeled as trusted-environment operations.</p></section><section className="organizer"><form onSubmit={create}><h2>Create tournament</h2><label>Name<input value={form.name} required minLength={3} onChange={e=>setForm({...form,name:e.target.value})}/></label><label>Game<input value={form.game_name} required onChange={e=>setForm({...form,game_name:e.target.value})}/></label><label>Competitor type<select value={form.tournament_type} onChange={e=>setForm({...form,tournament_type:e.target.value})}><option value="individual">Individual</option><option value="team">Team</option></select></label><label>Format<select value={form.format} onChange={e=>setForm({...form,format:e.target.value})}><option value="single_elimination">Single elimination</option><option value="double_elimination">Double elimination</option><option value="round_robin">Round robin</option><option value="swiss">Swiss</option></select></label><label>Capacity<input type="number" min="2" value={form.max_entries} onChange={e=>setForm({...form,max_entries:e.target.value})}/></label><label>Starts at<input type="datetime-local" value={form.starts_at} onChange={e=>setForm({...form,starts_at:e.target.value})}/></label><button className="button">Create draft</button></form><div><h2>Lifecycle queue</h2>{notice&&<Notice kind={notice.includes('created')||notice.includes('generated')?'success':'error'}>{notice}</Notice>}{tournaments.loading?<Busy/>:tournaments.data?.map(t=><OrganizerTournament t={t} generate={generate} approve={approve}/>)}</div></section></>}
-function OrganizerTournament({t,generate,approve}:{t:Tournament;generate:(id:number)=>void;approve:(r:Registration,s:'approved'|'rejected')=>void}){const regs=useLoad(()=>api.registrations({tournament_id:t.tournament_id}),[t.tournament_id]);return <article className="queue" key={t.tournament_id}><div><Link to={`/tournaments/${t.tournament_id}`}><b>{t.name}</b></Link><p><Status value={t.status}/> · {t.format}</p></div>{t.status==='registration_open'&&t.format==='single_elimination'&&<button className="button ghost" onClick={()=>generate(t.tournament_id)}>Generate bracket</button>}{regs.data?.filter(r=>r.status==='pending').map(r=><span className="approval" key={r.registration_id}>#{r.registration_id}<button onClick={()=>approve(r,'approved')}>Approve</button><button onClick={()=>approve(r,'rejected')}>Reject</button></span>)}</article>}
+function Organizer(){
+ const tournaments=useLoad(()=>api.tournaments({limit:100}),[])
+ const [form,setForm]=useState({name:'',game_name:'',tournament_type:'individual' as Tournament['tournament_type'],format:'single_elimination',max_entries:'8',starts_at:''})
+ const [notice,setNotice]=useState('')
+ const [noticeKind,setNoticeKind]=useState<'success'|'error'>('success')
+ const [nameError,setNameError]=useState('')
+ const [pending,setPending]=useState(false)
+ const clearNotice=()=>setNotice('')
+ const reportError=(error:unknown)=>{setNoticeKind('error');setNotice(message(error))}
+ const create=async(e:FormEvent)=>{
+  e.preventDefault()
+  const name=form.name.trim()
+  if(!name){setNameError(form.name?'Tournament name cannot be blank.':'Enter a tournament name.');return}
+  if(name.length<3){setNameError('Use at least 3 non-whitespace characters.');return}
+  if(name.length>150){setNameError('Tournament names must be 150 characters or fewer.');return}
+  setNameError('')
+  setPending(true)
+  clearNotice()
+  try{
+   await api.createTournament({name,game_name:form.game_name.trim(),tournament_type:form.tournament_type,format:form.format,max_entries:Number(form.max_entries),starts_at:form.starts_at||null})
+   setNoticeKind('success')
+   setNotice('Tournament created. Open it from Discover to manage its lifecycle.')
+   setForm({name:'',game_name:'',tournament_type:'individual',format:'single_elimination',max_entries:'8',starts_at:''})
+   void tournaments.refresh()
+  }catch(error){reportError(error)}finally{setPending(false)}
+ }
+ const transition=async(id:number,status:TournamentStatus)=>{
+  setPending(true)
+  clearNotice()
+  try{
+   await api.updateTournament(id,{status})
+   setNoticeKind('success')
+   setNotice(status==='registration_open'?'Registration is now open.':'Tournament status updated.')
+   void tournaments.refresh()
+  }catch(error){reportError(error)}finally{setPending(false)}
+ }
+ const generate=async(id:number)=>{
+  if(!confirm('Generate the persisted bracket? Only approved registrations will participate.'))return
+  setPending(true)
+  clearNotice()
+  try{
+   await api.generateBracket(id)
+   setNoticeKind('success')
+   setNotice('Bracket generated and tournament moved to in progress.')
+   void tournaments.refresh()
+  }catch(error){reportError(error)}finally{setPending(false)}
+ }
+ const approve=async(r:Registration,status:'approved'|'rejected')=>{
+  setPending(true)
+  clearNotice()
+  try{
+   await api.registrationStatus(r.registration_id,status)
+   setNoticeKind('success')
+   setNotice(status==='approved'?'Registration approved.':'Registration rejected.')
+   void tournaments.refresh()
+  }catch(error){reportError(error)}finally{setPending(false)}
+ }
+ return <>
+  <section className="page-title">
+   <p className="eyebrow">Trusted local demo tools</p>
+   <h1>Organizer console</h1>
+   <p>The current backend has no authorization layer. These actions are real and are deliberately labeled as trusted-environment operations.</p>
+  </section>
+  <section className="organizer">
+   <form onSubmit={create}>
+    <h2>Create tournament</h2>
+    <label htmlFor="tournament-name">Name</label>
+    <input
+     id="tournament-name"
+     name="name"
+     value={form.name}
+     aria-required="true"
+     maxLength={150}
+     aria-invalid={Boolean(nameError)}
+     aria-describedby={nameError?'tournament-name-error':undefined}
+     onChange={event=>{setForm({...form,name:event.target.value});setNameError('')}}
+    />
+    {nameError&&<p className="field-error" id="tournament-name-error" role="alert">{nameError}</p>}
+    <label htmlFor="tournament-game">Game</label>
+    <input id="tournament-game" name="game_name" value={form.game_name} required onChange={event=>setForm({...form,game_name:event.target.value})}/>
+    <label htmlFor="tournament-type">Competitor type</label>
+    <select id="tournament-type" value={form.tournament_type} onChange={event=>setForm({...form,tournament_type:event.target.value as Tournament['tournament_type']})}>
+     <option value="individual">Individual</option>
+     <option value="team">Team</option>
+    </select>
+    <label htmlFor="tournament-format">Format</label>
+    <select id="tournament-format" value={form.format} onChange={event=>setForm({...form,format:event.target.value})}>
+     <option value="single_elimination">Single elimination</option>
+     <option value="double_elimination">Double elimination</option>
+     <option value="round_robin">Round robin</option>
+     <option value="swiss">Swiss</option>
+    </select>
+    <label htmlFor="tournament-capacity">Capacity</label>
+    <input id="tournament-capacity" type="number" min="2" value={form.max_entries} onChange={event=>setForm({...form,max_entries:event.target.value})}/>
+    <label htmlFor="tournament-start">Starts at</label>
+    <input id="tournament-start" type="datetime-local" value={form.starts_at} onChange={event=>setForm({...form,starts_at:event.target.value})}/>
+    <button className="button" disabled={pending}>{pending?'Saving…':'Create draft'}</button>
+   </form>
+   <div>
+    <h2>Lifecycle queue</h2>
+    {notice&&<Notice kind={noticeKind}>{notice}</Notice>}
+    {tournaments.loading?<Busy/>:tournaments.data?.map(t=><OrganizerTournament key={t.tournament_id} t={t} generate={generate} approve={approve} transition={transition} pending={pending}/>)}
+   </div>
+  </section>
+ </>
+}
+function OrganizerTournament({t,generate,approve,transition,pending}:{t:Tournament;generate:(id:number)=>void;approve:(r:Registration,s:'approved'|'rejected')=>Promise<void>;transition:(id:number,status:TournamentStatus)=>void;pending:boolean}){const regs=useLoad(()=>api.registrations({tournament_id:t.tournament_id}),[t.tournament_id]);const decide=async(r:Registration,status:'approved'|'rejected')=>{await approve(r,status);void regs.refresh()};return <article className="queue"><div><Link to={`/tournaments/${t.tournament_id}`}><b>{t.name}</b></Link><p><Status value={t.status}/> · {t.format}</p></div>{t.status==='draft'&&<button className="button ghost" disabled={pending} onClick={()=>transition(t.tournament_id,'registration_open')}>Open registration</button>}{t.status==='registration_open'&&t.format==='single_elimination'&&<button className="button ghost" disabled={pending} onClick={()=>generate(t.tournament_id)}>Generate bracket</button>}{regs.data?.filter(r=>r.status==='pending').map(r=><span className="approval" key={r.registration_id}>#{r.registration_id}<button disabled={pending} onClick={()=>void decide(r,'approved')}>Approve</button><button disabled={pending} onClick={()=>void decide(r,'rejected')}>Reject</button></span>)}</article>}
 export function App(){return <Shell><Routes><Route path="/" element={<Discover/>}/><Route path="/tournaments/:id" element={<TournamentDetail/>}/><Route path="/registrations" element={<Registrations/>}/><Route path="/teams" element={<Teams/>}/><Route path="/organizer" element={<Organizer/>}/><Route path="*" element={<Discover/>}/></Routes></Shell>}

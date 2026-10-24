@@ -41,6 +41,30 @@ The E2E suite needs no running API or database and writes no database data. Set 
 
 For a real local full-stack smoke check, separately start PostgreSQL/MongoDB, apply migrations, run FastAPI, and run Vite with `VITE_API_BASE_URL` set if the backend is not at the default `http://localhost:8000/api/v1`. The deterministic Playwright suite itself continues to mock API responses.
 
+### Isolated real-stack workflow
+
+Install the dependencies once from the repository root and frontend folder:
+
+```powershell
+python -m pip install -r backend/requirements.txt
+Set-Location frontend
+npm ci
+npm run e2e:install
+Set-Location ..
+```
+
+Then, from the repository root, run:
+
+```powershell
+python backend/scripts/run_real_stack_e2e.py
+```
+
+This opt-in runner starts an ephemeral PostgreSQL database named `nexusmatch_e2e_test` and a separate MongoDB service from `compose.e2e.yaml`. It uses alternate ports 5433, 27018, 8001, and 5174, and refuses to start if one of those is already in use. The normal application ports are not stopped or reused. Before migrations or tests, it verifies the connected database name, user, server, and empty public schema. It applies migrations and verifies their checksums and `matches.is_bye`, runs the PostgreSQL-backed backend tests, starts FastAPI, then runs `e2e:integration`.
+
+The real browser test has a separate Playwright configuration and does not install `page.route` handlers. Its only API test setup creates synthetic player records through the live API. The database service has no persistent volume; cleanup stops only this invocation's unique Compose project and does not stop or alter the regular development containers or databases. The runner overrides database settings in its child processes and does not require `.env` edits. It fails closed if test database identity cannot be verified.
+
+The real workflow verifies trimmed tournament-name creation and API responses, required/blank/overlong name rejection, status-controlled registration, pending approval, duplicate and capacity errors, a persisted bye bracket, valid result submission, winner advancement, repeated-operation rejection, and browser-refresh persistence. The backend suite covers additional database constraints and no-bye bracket sizes. The configuration refuses to run unless `NEXUSMATCH_REAL_E2E=1` is set by the isolated runner.
+
 ## Routes and API coverage
 
 - `/` — list/search/filter actual tournaments.

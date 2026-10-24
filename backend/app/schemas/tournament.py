@@ -20,9 +20,11 @@ class TournamentCreate(BaseModel):
     max_entries: int = Field(ge=2, le=100_000)
     starts_at: datetime | None = None
 
-    @field_validator("name", "game_name")
+    @field_validator("name", "game_name", mode="before")
     @classmethod
-    def strip_required_text(cls, value: str) -> str:
+    def strip_required_text(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
         value = value.strip()
         if not value:
             raise ValueError("This field must not be blank.")
@@ -37,10 +39,12 @@ class TournamentUpdate(BaseModel):
     starts_at: datetime | None = None
     status: TournamentStatus | None = None
 
-    @field_validator("name", "game_name")
+    @field_validator("name", "game_name", mode="before")
     @classmethod
-    def strip_optional_text(cls, value: str | None) -> str | None:
+    def strip_optional_text(cls, value: object) -> object:
         if value is None:
+            return value
+        if not isinstance(value, str):
             return value
         value = value.strip()
         if not value:

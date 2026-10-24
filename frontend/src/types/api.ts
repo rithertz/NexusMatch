@@ -1,5 +1,6 @@
 export type TournamentStatus = 'draft'|'registration_open'|'in_progress'|'completed'|'cancelled'
 export type Tournament = { tournament_id:number; name:string; game_name:string; tournament_type:'individual'|'team'; format:string; status:TournamentStatus; max_entries:number; starts_at:string|null; created_at:string }
+export type TournamentCreate = Pick<Tournament, 'name'|'game_name'|'tournament_type'|'format'|'max_entries'|'starts_at'>
 export type Player = { player_id:number; username:string; display_name:string; email:string|null; created_at:string }
 export type Team = { team_id:number; team_name:string; created_at:string }
 export type Registration = { registration_id:number; tournament_id:number; player_id:number|null; team_id:number|null; status:'pending'|'approved'|'rejected'|'withdrawn'; registered_at:string }
